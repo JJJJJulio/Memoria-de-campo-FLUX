@@ -34,6 +34,8 @@
     lastMoveMs: 0,
     commandPulse: 0,
     pointerDown: false,
+    revealBoost: 0,
+    lastInteractionMs: 0,
   };
 
   // 1) MOTOR DE PARTÍCULAS
@@ -66,6 +68,7 @@
   let lastMs = performance.now();
   let ritualWave = 0;
   let ritualCenter = { x: 0, y: 0 };
+  let visibilityEnergy = 0.18;
 
   const rand = rngFactory(memory.seed);
 
@@ -202,6 +205,7 @@
 
     machine.residue = Math.max(0, machine.residue * 0.994 - 0.0005);
     input.commandPulse = Math.max(0, input.commandPulse * 0.965 - 0.004);
+    input.revealBoost = Math.max(0, input.revealBoost * 0.988 - 0.0012);
 
     const targetEnergy =
       machine.current === "latencia"
@@ -213,6 +217,14 @@
             : 0.68;
 
     machine.energy += (targetEnergy - machine.energy) * 0.02;
+
+    // Respiración de visibilidad: aparece con interacción y vuelve a ocultarse lentamente.
+    const idleMs = nowMs - (input.lastInteractionMs || machine.startMs);
+    const idleFactor = clamp((idleMs - 900) / 9500, 0, 1);
+    const targetVisibility = 0.12 + input.revealBoost * 0.82 + ritualWave * 0.3 + (1 - idleFactor) * 0.08;
+    const blend = idleFactor > 0.65 ? 0.009 : 0.02;
+    visibilityEnergy += (targetVisibility - visibilityEnergy) * blend;
+    visibilityEnergy = clamp(visibilityEnergy, 0.08, 1);
   }
 
   function optimizeParticles(dtMs) {
@@ -314,12 +326,12 @@
 
   function drawChakanaGuide() {
     // Capa visual más sólida para que la chakana se termine de leer claramente.
-    const denseAlpha = 0.035 + formation * 0.26;
+    const denseAlpha = (0.02 + formation * 0.2) * visibilityEnergy;
     const step = 4;
 
     for (let i = 0; i < chakanaPoints.length; i += step) {
       const p = chakanaPoints[i];
-      const reveal = clamp((formation - p.layer * 0.75) * 2.4, 0, 1);
+      const reveal = clamp((formation - p.layer * 0.75) * 2.4, 0, 1) * visibilityEnergy;
       if (reveal <= 0) continue;
       ctx.fillStyle = `rgba(234,230,222,${denseAlpha * reveal})`;
       ctx.fillRect(p.x - 1.0, p.y - 1.0, 2.0, 2.0);
@@ -331,7 +343,7 @@
       const p = particles[i];
       const light = p.tier === 0 ? 78 : p.tier === 1 ? 84 : 91;
       const base = p.tier === 0 ? 0.24 : p.tier === 1 ? 0.37 : 0.5;
-      const alpha = clamp(base + formation * 0.15 + ritualWave * 0.15 + input.commandPulse * 0.1, 0.08, 0.9);
+      const alpha = clamp(base + formation * 0.1 + visibilityEnergy * 0.16 + ritualWave * 0.15 + input.commandPulse * 0.1, 0.08, 0.9);
 
       ctx.fillStyle = `hsla(${p.warmth}, 17%, ${light}%, ${alpha})`;
       ctx.beginPath();
@@ -360,6 +372,8 @@
     machine.residue = clamp(machine.residue + 0.5, 0, 1.2);
     machine.energy = clamp(machine.energy + 0.13, 0, 1);
     input.commandPulse = clamp(input.commandPulse + 0.22, 0, 1);
+    input.revealBoost = clamp(input.revealBoost + 0.3, 0, 1.5);
+    input.lastInteractionMs = performance.now();
 
     memory.variation = (memory.variation * 0.9 + Math.random() * 0.1) % 1;
     memory.seed = (memory.seed + Math.floor(Math.random() * 991)) >>> 0;
@@ -396,6 +410,7 @@
     input.active = true;
     input.x = ev.clientX;
     input.y = ev.clientY;
+    input.lastInteractionMs = performance.now();
   });
 
   canvas.addEventListener("pointermove", (ev) => {
@@ -409,10 +424,14 @@
     input.speed = Math.hypot(dx, dy) / dt;
     input.lastMoveMs = now;
     input.active = true;
+    const speedNorm = clamp(input.speed * 0.22, 0, 1);
+    input.revealBoost = clamp(input.revealBoost + speedNorm * 0.08 + 0.007, 0, 1.4);
+    input.lastInteractionMs = now;
   });
 
   canvas.addEventListener("pointerdown", (ev) => {
     input.pointerDown = true;
+    input.lastInteractionMs = performance.now();
     ritualAt(ev.clientX, ev.clientY);
   });
 
@@ -431,11 +450,15 @@
       machine.energy = clamp(machine.energy - 0.1, 0, 1);
       machine.residue = clamp(machine.residue - 0.2, 0, 1.2);
       input.commandPulse = clamp(input.commandPulse + 0.05, 0, 1);
+      input.revealBoost = clamp(input.revealBoost + 0.06, 0, 1.5);
+      input.lastInteractionMs = performance.now();
     }
     if (ev.key === "m" || ev.key === "M") {
       memory.variation = (memory.variation + 0.041) % 1;
       targetCount = clamp(1300 + Math.floor(memory.variation * 420), range.min, range.max);
       input.commandPulse = clamp(input.commandPulse + 0.08, 0, 1);
+      input.revealBoost = clamp(input.revealBoost + 0.08, 0, 1.5);
+      input.lastInteractionMs = performance.now();
       saveMemory();
     }
     if (ev.key === "h" || ev.key === "H") toggleHud();
