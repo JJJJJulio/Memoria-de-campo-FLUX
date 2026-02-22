@@ -2,73 +2,81 @@
   const canvas = document.getElementById("c");
   const ctx = canvas.getContext("2d", { alpha: false });
 
-  // 5) Memoria local
-  // Propósito: conservar una huella sutil entre sesiones (seed, energía y variación).
-  const STORAGE_KEY = "memoria.flux.state.v2";
-  const persisted = loadMemory();
+  // 5) MEMORIA LOCAL
+  // Propósito: persistir huella suave entre sesiones.
+  // Variables: seed (aleatoriedad estable), energyLevel (intensidad global), variation (matiz de comportamiento).
+  // Lógica: leer al iniciar, aplicar en parámetros base y guardar periódicamente + beforeunload.
+  const STORAGE_KEY = "memoria.flux.state.v3";
+  const memory = loadMemory();
 
-  // 4) Máquina de estados
-  // Propósito: organizar la evolución emocional y visual del sistema en fases suaves.
+  // 4) MÁQUINA DE ESTADOS
+  // Propósito: modular el ritmo contemplativo en fases temporales.
+  // Variables: current, startMs, ritualUntil, residue, energy.
+  // Lógica: estado por tiempo (latencia/emergencia/resonancia), evento ritual temporal y cola de residuo.
   const machine = {
-    startTime: performance.now(),
+    startMs: performance.now(),
     current: "latencia",
     ritualUntil: 0,
     residue: 0,
-    energy: persisted.energyLevel,
+    energy: memory.energyLevel,
   };
 
-  // 3) Campo de interacción
-  // Propósito: transformar movimiento/click del usuario en viento, turbulencia y ritual.
-  const pointer = {
+  // 3) CAMPO DE INTERACCIÓN
+  // Propósito: interacción sutil, orgánica y minimalista.
+  // Variables: posición/velocidad del puntero + comandos discretos de teclado.
+  // Lógica: pointermove crea viento por velocidad y distancia; click genera ritual; teclas discretas afectan energía.
+  const input = {
     x: 0,
     y: 0,
-    px: 0,
-    py: 0,
     speed: 0,
     active: false,
-    lastMoveTime: 0,
+    lastMoveMs: 0,
+    commandPulse: 0,
   };
 
-  // 1) Motor de partículas
-  // Propósito: simular materia viva con tres escalas y auto-optimización por FPS.
+  // 1) MOTOR DE PARTÍCULAS
+  // Propósito: sistema vivo de 3 escalas con auto-optimización por FPS.
+  // Variables: particles, targetCount (1200-1800), fpsAvg.
+  // Lógica: actualizar fuerzas, amortiguar, reinyectar y ajustar volumen según rendimiento.
   const particles = [];
-  const targetRange = { min: 1200, max: 1800 };
-  let targetCount = clamp(1400 + Math.floor(persisted.variation * 350), targetRange.min, targetRange.max);
+  const range = { min: 1200, max: 1800 };
+  let targetCount = clamp(1320 + Math.floor(memory.variation * 380), range.min, range.max);
+  let fpsAvg = 60;
 
-  // 2) Generador matemático de chakana
-  // Propósito: crear una figura reconocible (grid 9x9) como campo de atracción gradual.
-  let chakanaTargets = [];
-  let chakanaScale = 1;
-  let centerX = 0;
-  let centerY = 0;
+  // 2) GENERADOR MATEMÁTICO DE CHAKANA
+  // Propósito: representar la chakana real (escalonada con vacío circular central).
+  // Variables: chakanaPoints, geometryScale, formation.
+  // Lógica: muestrear una rejilla y conservar puntos que pertenecen a una función implícita de la forma.
+  let chakanaPoints = [];
+  let geometryScale = 1;
+  let formation = 0;
+
+  // 6) RENDER
+  // Propósito: mantener negro profundo, contraste alto y presencia silenciosa.
+  // Variables: dimensiones, dpr, phase.
+  // Lógica: fondo con estela larga + guía tenue + partículas cálidas de alta legibilidad.
   let w = 1;
   let h = 1;
-
-  // Render / tiempo
   let dpr = 1;
-  let lastTime = performance.now();
-  let formation = 0;
+  let cx = 0;
+  let cy = 0;
+  let lastMs = performance.now();
+  let phase = 0;
   let ritualWave = 0;
   let ritualCenter = { x: 0, y: 0 };
-  let phase = 0;
 
-  // Métricas para auto-optimización.
-  let fpsAvg = 60;
+  const rand = rngFactory(memory.seed);
 
   function loadMemory() {
     try {
       const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
       return {
-        seed: Number.isFinite(raw.seed) ? raw.seed : Math.floor(Math.random() * 1e9),
-        energyLevel: Number.isFinite(raw.energyLevel) ? raw.energyLevel : 0.32,
+        seed: Number.isFinite(raw.seed) ? raw.seed : Math.floor(Math.random() * 2 ** 31),
+        energyLevel: Number.isFinite(raw.energyLevel) ? raw.energyLevel : 0.3,
         variation: Number.isFinite(raw.variation) ? raw.variation : Math.random(),
       };
     } catch (_) {
-      return {
-        seed: Math.floor(Math.random() * 1e9),
-        energyLevel: 0.32,
-        variation: Math.random(),
-      };
+      return { seed: Math.floor(Math.random() * 2 ** 31), energyLevel: 0.3, variation: Math.random() };
     }
   }
 
@@ -76,9 +84,9 @@
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
-        seed: persisted.seed,
+        seed: memory.seed >>> 0,
         energyLevel: Number(machine.energy.toFixed(4)),
-        variation: Number(persisted.variation.toFixed(4)),
+        variation: Number(memory.variation.toFixed(4)),
       }),
     );
   }
@@ -91,8 +99,6 @@
     };
   }
 
-  const rand = rngFactory(persisted.seed);
-
   function clamp(v, min, max) {
     return Math.max(min, Math.min(max, v));
   }
@@ -101,271 +107,313 @@
     dpr = Math.min(2, window.devicePixelRatio || 1);
     w = window.innerWidth;
     h = window.innerHeight;
+    cx = w * 0.5;
+    cy = h * 0.5;
+
     canvas.width = Math.floor(w * dpr);
     canvas.height = Math.floor(h * dpr);
     canvas.style.width = `${w}px`;
     canvas.style.height = `${h}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    centerX = w * 0.5;
-    centerY = h * 0.5;
-    buildChakanaTargets();
+
+    buildChakana();
   }
 
-  function buildChakanaTargets() {
-    const gridSize = 9;
-    const cell = Math.min(w, h) * 0.055;
-    chakanaScale = cell;
+  function chakanaMask(nx, ny) {
+    const ax = Math.abs(nx);
+    const ay = Math.abs(ny);
 
-    const pattern = [
-      [0, 0, 1, 1, 1, 1, 1, 0, 0],
-      [0, 0, 1, 1, 1, 1, 1, 0, 0],
-      [1, 1, 1, 0, 0, 0, 1, 1, 1],
-      [1, 1, 0, 0, 1, 0, 0, 1, 1],
-      [1, 1, 0, 1, 1, 1, 0, 1, 1],
-      [1, 1, 0, 0, 1, 0, 0, 1, 1],
-      [1, 1, 1, 0, 0, 0, 1, 1, 1],
-      [0, 0, 1, 1, 1, 1, 1, 0, 0],
-      [0, 0, 1, 1, 1, 1, 1, 0, 0],
-    ];
+    const core = ax <= 1.0 && ay <= 1.0;
+    const armMidV = ax <= 0.58 && ay <= 1.42;
+    const armMidH = ax <= 1.42 && ay <= 0.58;
+    const armTipV = ax <= 0.31 && ay <= 1.78;
+    const armTipH = ax <= 1.78 && ay <= 0.31;
 
-    chakanaTargets = [];
-    const offset = (gridSize - 1) * 0.5;
+    const inShape = core || armMidV || armMidH || armTipV || armTipH;
+    const hole = nx * nx + ny * ny < 0.23;
 
-    for (let gy = 0; gy < gridSize; gy += 1) {
-      for (let gx = 0; gx < gridSize; gx += 1) {
-        if (pattern[gy][gx] === 0) continue;
-        const tx = centerX + (gx - offset) * cell;
-        const ty = centerY + (gy - offset) * cell;
-        chakanaTargets.push({ x: tx, y: ty });
+    return inShape && !hole;
+  }
+
+  function buildChakana() {
+    const grid = 120;
+    const s = Math.min(w, h) * 0.235;
+    geometryScale = s;
+    chakanaPoints = [];
+
+    for (let gy = 0; gy < grid; gy += 1) {
+      for (let gx = 0; gx < grid; gx += 1) {
+        const nx = (gx / (grid - 1)) * 4 - 2;
+        const ny = (gy / (grid - 1)) * 4 - 2;
+        if (!chakanaMask(nx, ny)) continue;
+
+        // Sesgo por capas para que emerja desde el centro hacia la forma completa.
+        const r = Math.hypot(nx, ny);
+        const layer = clamp(r / 1.8, 0, 1);
+
+        chakanaPoints.push({
+          x: cx + nx * s,
+          y: cy + ny * s,
+          layer,
+        });
       }
     }
   }
 
   function createParticle() {
-    const tierPick = rand();
-    const tier = tierPick < 0.58 ? 0 : tierPick < 0.88 ? 1 : 2;
-    const size = tier === 0 ? 0.7 + rand() * 0.8 : tier === 1 ? 1.2 + rand() * 1 : 2 + rand() * 1.4;
+    const k = rand();
+    const tier = k < 0.6 ? 0 : k < 0.9 ? 1 : 2;
+    const size = tier === 0 ? 0.6 + rand() * 0.65 : tier === 1 ? 1.1 + rand() * 0.9 : 1.8 + rand() * 1.2;
 
     return {
       x: rand() * w,
       y: rand() * h,
-      vx: (rand() - 0.5) * 0.2,
-      vy: (rand() - 0.5) * 0.2,
+      vx: (rand() - 0.5) * 0.08,
+      vy: (rand() - 0.5) * 0.08,
       size,
       tier,
-      warmth: 38 + rand() * 14,
-      life: 120 + rand() * 280,
-      targetIndex: Math.floor(rand() * Math.max(chakanaTargets.length, 1)),
+      life: 180 + rand() * 260,
+      warmth: 33 + rand() * 12,
+      target: Math.floor(rand() * Math.max(1, chakanaPoints.length)),
     };
   }
 
-  function fillParticles() {
+  function ensureParticles() {
     while (particles.length < targetCount) particles.push(createParticle());
   }
 
-  function updateState(now) {
-    const t = (now - machine.startTime) / 1000;
-    if (t < 3) machine.current = "latencia";
-    else if (t < 12) machine.current = "emergencia";
+  function updateMachine(nowMs) {
+    const sec = (nowMs - machine.startMs) / 1000;
+    if (sec < 3) machine.current = "latencia";
+    else if (sec < 12) machine.current = "emergencia";
     else machine.current = "resonancia";
 
-    if (now < machine.ritualUntil) {
+    ritualWave = 0;
+    if (nowMs < machine.ritualUntil) {
       machine.current = "ritual";
-      ritualWave = (machine.ritualUntil - now) / 1500;
-    } else {
-      ritualWave = 0;
+      ritualWave = (machine.ritualUntil - nowMs) / 1700;
     }
 
-    machine.residue = Math.max(0, machine.residue * 0.993 - 0.0006);
+    machine.residue = Math.max(0, machine.residue * 0.994 - 0.00055);
+    input.commandPulse = Math.max(0, input.commandPulse * 0.96 - 0.004);
 
     const targetEnergy =
       machine.current === "latencia"
         ? 0.24
         : machine.current === "emergencia"
-          ? 0.38
+          ? 0.36
           : machine.current === "resonancia"
-            ? 0.52
-            : 0.68;
+            ? 0.5
+            : 0.67;
 
-    machine.energy += (targetEnergy - machine.energy) * 0.02;
+    machine.energy += (targetEnergy - machine.energy) * 0.023;
   }
 
-  function measureFps(dt) {
-    const fps = 1000 / Math.max(1, dt);
-    fpsAvg = fpsAvg * 0.97 + fps * 0.03;
+  function optimizeParticles(dtMs) {
+    const fps = 1000 / Math.max(1, dtMs);
+    fpsAvg = fpsAvg * 0.96 + fps * 0.04;
 
-    if (fpsAvg < 40 && targetCount > targetRange.min) targetCount -= 8;
-    if (fpsAvg > 56 && targetCount < targetRange.max) targetCount += 4;
+    if (fpsAvg < 40 && targetCount > range.min) targetCount -= 10;
+    if (fpsAvg > 57 && targetCount < range.max) targetCount += 5;
 
     if (particles.length > targetCount) {
-      particles.splice(0, Math.min(12, particles.length - targetCount));
+      particles.splice(0, Math.min(20, particles.length - targetCount));
     }
   }
 
-  function chakanaField(px, py, p, dt) {
-    const target = chakanaTargets[p.targetIndex % chakanaTargets.length] || { x: centerX, y: centerY };
-    const dx = target.x - px;
-    const dy = target.y - py;
+  function fieldForParticle(p, dtMs) {
+    const t = chakanaPoints[p.target] || { x: cx, y: cy, layer: 0 };
+    const dx = t.x - p.x;
+    const dy = t.y - p.y;
     const dist = Math.hypot(dx, dy) + 0.001;
 
-    // Formación gradual: 10–12 s para que la figura emerja claramente.
-    const formStrength = 0.02 + formation * 0.2;
-    let fx = (dx / dist) * formStrength;
-    let fy = (dy / dist) * formStrength;
+    // Formación 10-12s: primero capas cercanas al centro, luego brazos y puntas.
+    const layerFactor = clamp((formation - t.layer * 0.7) * 2.2, 0, 1);
+    const pull = 0.004 + layerFactor * 0.03;
 
-    // Campo atmosférico lento, no neon ni arcade.
-    const nx = (px - centerX) / (chakanaScale * 4.6);
-    const ny = (py - centerY) / (chakanaScale * 4.6);
-    const swirl = Math.sin(nx * 1.2 + phase * 0.2) * Math.cos(ny * 1.15 - phase * 0.2);
-    fx += -ny * 0.0036 * swirl;
-    fy += nx * 0.0036 * swirl;
+    let fx = (dx / dist) * pull;
+    let fy = (dy / dist) * pull;
 
-    // Residuo: ligera memoria cinética tras ritual.
-    fx += machine.residue * Math.sin((py + phase * 30) * 0.004) * 0.02;
-    fy += machine.residue * Math.cos((px - phase * 30) * 0.004) * 0.02;
+    const nx = (p.x - cx) / (geometryScale * 2.4);
+    const ny = (p.y - cy) / (geometryScale * 2.4);
+    const swirl = Math.sin(nx * 1.45 + phase * 0.4) * Math.cos(ny * 1.35 - phase * 0.36);
+    fx += -ny * swirl * 0.0028;
+    fy += nx * swirl * 0.0028;
 
-    // Onda radial de ritual desde el centro del click.
+    fx += Math.sin((p.y + phase * 50) * 0.0043) * machine.residue * 0.012;
+    fy += Math.cos((p.x - phase * 50) * 0.0043) * machine.residue * 0.012;
+
     if (ritualWave > 0) {
-      const rx = px - ritualCenter.x;
-      const ry = py - ritualCenter.y;
+      const rx = p.x - ritualCenter.x;
+      const ry = p.y - ritualCenter.y;
       const rr = Math.hypot(rx, ry) + 0.001;
-      const wave = Math.sin(rr * 0.035 - (1 - ritualWave) * 10) * ritualWave;
-      fx += (rx / rr) * wave * 0.02;
-      fy += (ry / rr) * wave * 0.02;
+      const wave = Math.sin(rr * 0.03 - (1 - ritualWave) * 11) * ritualWave;
+      fx += (rx / rr) * wave * 0.012;
+      fy += (ry / rr) * wave * 0.012;
     }
 
-    return { fx: fx * dt * 0.06, fy: fy * dt * 0.06 };
+    return { fx: fx * dtMs * 0.06, fy: fy * dtMs * 0.06 };
   }
 
-  function applyInteraction(p, dt) {
-    if (!pointer.active) return;
-    const dx = p.x - pointer.x;
-    const dy = p.y - pointer.y;
+  function applyPointerWind(p, dtMs) {
+    if (!input.active) return;
+    const dx = p.x - input.x;
+    const dy = p.y - input.y;
     const d = Math.hypot(dx, dy) + 1;
-    const influence = clamp(1 - d / (Math.min(w, h) * 0.42), 0, 1);
 
-    // Velocidad del mouse -> turbulencia; distancia -> influencia.
-    const turbulence = clamp(pointer.speed * 0.06, 0, 4.2);
+    const influence = clamp(1 - d / (Math.min(w, h) * 0.48), 0, 1);
+    const turbulence = clamp(input.speed * 0.25, 0, 8.5);
     const wind = turbulence * influence;
-    p.vx += (dx / d) * wind * dt * 0.012;
-    p.vy += (dy / d) * wind * dt * 0.012;
+
+    p.vx += (dx / d) * wind * dtMs * 0.010;
+    p.vy += (dy / d) * wind * dtMs * 0.010;
   }
 
-  function updateParticles(dt) {
-    fillParticles();
-    const calm = 0.985 - machine.energy * 0.04;
+  function updateParticles(dtMs) {
+    ensureParticles();
 
+    const drag = 0.987 - machine.energy * 0.036;
     for (let i = 0; i < particles.length; i += 1) {
       const p = particles[i];
-      const { fx, fy } = chakanaField(p.x, p.y, p, dt);
-      p.vx += fx;
-      p.vy += fy;
 
-      applyInteraction(p, dt);
+      const f = fieldForParticle(p, dtMs);
+      p.vx += f.fx;
+      p.vy += f.fy;
 
-      p.vx *= calm;
-      p.vy *= calm;
+      applyPointerWind(p, dtMs);
+
+      p.vx *= drag;
+      p.vy *= drag;
       p.x += p.vx;
       p.y += p.vy;
-      p.life -= dt * 0.013;
+      p.life -= dtMs * 0.01;
 
-      if (p.x < -30 || p.x > w + 30 || p.y < -30 || p.y > h + 30 || p.life <= 0) {
+      if (p.x < -24 || p.x > w + 24 || p.y < -24 || p.y > h + 24 || p.life <= 0) {
         particles[i] = createParticle();
         continue;
       }
 
-      if ((i + phase * 100) % 280 < 1) {
-        p.targetIndex = (p.targetIndex + 1) % Math.max(chakanaTargets.length, 1);
+      if ((i + phase * 150) % 220 < 1) {
+        p.target = Math.floor(rand() * Math.max(1, chakanaPoints.length));
       }
     }
   }
 
-  function draw(now, dt) {
-    // 6) Render
-    // Propósito: alto contraste, contemplación y visibilidad de la chakana sin UI.
-    ctx.fillStyle = "rgba(11,11,13,0.16)";
-    ctx.fillRect(0, 0, w, h);
-
-    // Guía casi invisible de la chakana para reforzar reconocimiento formal.
-    const guideAlpha = 0.02 + formation * 0.09;
-    for (let i = 0; i < chakanaTargets.length; i += 1) {
-      const t = chakanaTargets[i];
-      ctx.fillStyle = `rgba(242,236,224,${guideAlpha})`;
-      ctx.fillRect(t.x - chakanaScale * 0.16, t.y - chakanaScale * 0.16, chakanaScale * 0.32, chakanaScale * 0.32);
+  function drawChakanaGuide() {
+    const alpha = 0.01 + formation * 0.08;
+    const step = 8;
+    for (let i = 0; i < chakanaPoints.length; i += step) {
+      const p = chakanaPoints[i];
+      const reveal = clamp((formation - p.layer * 0.75) * 2.2, 0, 1);
+      if (reveal <= 0) continue;
+      ctx.fillStyle = `rgba(236,232,224,${alpha * reveal})`;
+      ctx.fillRect(p.x - 0.8, p.y - 0.8, 1.6, 1.6);
     }
+  }
 
+  function drawParticles() {
     for (let i = 0; i < particles.length; i += 1) {
       const p = particles[i];
-      const brightness = p.tier === 0 ? 78 : p.tier === 1 ? 84 : 90;
-      const alphaBase = p.tier === 0 ? 0.23 : p.tier === 1 ? 0.33 : 0.44;
-      const alpha = alphaBase + formation * 0.22 + ritualWave * 0.15;
-      ctx.fillStyle = `hsla(${p.warmth}, 22%, ${brightness}%, ${clamp(alpha, 0.1, 0.9)})`;
+      const light = p.tier === 0 ? 78 : p.tier === 1 ? 84 : 90;
+      const alphaBase = p.tier === 0 ? 0.24 : p.tier === 1 ? 0.36 : 0.48;
+      const alpha = clamp(alphaBase + formation * 0.19 + ritualWave * 0.12 + input.commandPulse * 0.09, 0.08, 0.88);
+
+      ctx.fillStyle = `hsla(${p.warmth}, 18%, ${light}%, ${alpha})`;
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
 
-    // Velo sutil para una elegancia silenciosa.
-    const veil = 0.05 - machine.energy * 0.02;
-    ctx.fillStyle = `rgba(5,5,7,${clamp(veil, 0.012, 0.06)})`;
+  function render(nowMs, dtMs) {
+    ctx.fillStyle = "rgba(11,11,13,0.14)";
     ctx.fillRect(0, 0, w, h);
 
-    if (now - machine.startTime > 2500 && (now - machine.startTime) % 3500 < dt) {
-      saveMemory();
+    drawChakanaGuide();
+    drawParticles();
+
+    const veil = clamp(0.048 - machine.energy * 0.016, 0.012, 0.06);
+    ctx.fillStyle = `rgba(7,7,9,${veil})`;
+    ctx.fillRect(0, 0, w, h);
+
+    if (nowMs - machine.startMs > 2800 && (nowMs - machine.startMs) % 3600 < dtMs) saveMemory();
+  }
+
+  function ritualAt(x, y) {
+    ritualCenter = { x, y };
+    machine.ritualUntil = performance.now() + 1700;
+    machine.residue = clamp(machine.residue + 0.46, 0, 1.2);
+    machine.energy = clamp(machine.energy + 0.12, 0, 1);
+
+    memory.variation = (memory.variation * 0.91 + Math.random() * 0.09) % 1;
+    memory.seed = (memory.seed + Math.floor(Math.random() * 997)) >>> 0;
+    input.commandPulse = clamp(input.commandPulse + 0.2, 0, 1);
+
+    for (let i = 0; i < particles.length; i += 1) {
+      if (Math.random() < 0.33) {
+        particles[i].target = Math.floor(Math.random() * Math.max(1, chakanaPoints.length));
+      }
     }
+    saveMemory();
   }
 
-  function tick(now) {
-    const dt = now - lastTime;
-    lastTime = now;
-    phase += dt * 0.001;
+  function frame(nowMs) {
+    const dtMs = nowMs - lastMs;
+    lastMs = nowMs;
+    phase += dtMs * 0.001;
 
-    formation = clamp((now - machine.startTime) / 11000, 0, 1);
+    formation = clamp((nowMs - machine.startMs) / 11000, 0, 1);
 
-    updateState(now);
-    measureFps(dt);
-    updateParticles(dt);
-    draw(now, dt);
+    updateMachine(nowMs);
+    optimizeParticles(dtMs);
+    updateParticles(dtMs);
+    render(nowMs, dtMs);
 
-    requestAnimationFrame(tick);
+    requestAnimationFrame(frame);
   }
+
+  canvas.addEventListener("pointerenter", (ev) => {
+    input.active = true;
+    input.x = ev.clientX;
+    input.y = ev.clientY;
+  });
 
   canvas.addEventListener("pointermove", (ev) => {
     const now = performance.now();
-    const dx = ev.clientX - pointer.x;
-    const dy = ev.clientY - pointer.y;
-    const dt = Math.max(16, now - (pointer.lastMoveTime || now - 16));
+    const dx = ev.clientX - input.x;
+    const dy = ev.clientY - input.y;
+    const dt = Math.max(10, now - (input.lastMoveMs || now - 16));
 
-    pointer.px = pointer.x;
-    pointer.py = pointer.y;
-    pointer.x = ev.clientX;
-    pointer.y = ev.clientY;
-    pointer.speed = Math.hypot(dx, dy) / dt;
-    pointer.active = true;
-    pointer.lastMoveTime = now;
+    input.x = ev.clientX;
+    input.y = ev.clientY;
+    input.speed = Math.hypot(dx, dy) / dt;
+    input.lastMoveMs = now;
+    input.active = true;
+  });
+
+  canvas.addEventListener("pointerdown", (ev) => {
+    ritualAt(ev.clientX, ev.clientY);
   });
 
   canvas.addEventListener("pointerleave", () => {
-    pointer.active = false;
-    pointer.speed = 0;
+    input.active = false;
+    input.speed = 0;
   });
 
-  canvas.addEventListener("click", (ev) => {
-    ritualCenter.x = ev.clientX;
-    ritualCenter.y = ev.clientY;
-    machine.ritualUntil = performance.now() + 1600;
-    machine.residue = clamp(machine.residue + 0.45, 0, 1.2);
-    machine.energy = clamp(machine.energy + 0.1, 0, 1);
-
-    persisted.variation = (persisted.variation * 0.88 + Math.random() * 0.12) % 1;
-    persisted.seed = (persisted.seed + Math.floor(Math.random() * 977)) >>> 0;
-    saveMemory();
-
-    // Ligera reorganización de objetivos tras ritual.
-    for (let i = 0; i < particles.length; i += 1) {
-      if (Math.random() < 0.3) {
-        particles[i].targetIndex = Math.floor(Math.random() * Math.max(chakanaTargets.length, 1));
-      }
+  // Comandos interactivos sutiles y minimalistas (sin UI):
+  // r = ritual al centro, c = calma (reduce energía), m = mutación leve de variación.
+  window.addEventListener("keydown", (ev) => {
+    if (ev.key === "r" || ev.key === "R") ritualAt(cx, cy);
+    if (ev.key === "c" || ev.key === "C") {
+      machine.energy = clamp(machine.energy - 0.08, 0, 1);
+      machine.residue = clamp(machine.residue - 0.18, 0, 1.2);
+      input.commandPulse = clamp(input.commandPulse + 0.05, 0, 1);
+    }
+    if (ev.key === "m" || ev.key === "M") {
+      memory.variation = (memory.variation + 0.037) % 1;
+      input.commandPulse = clamp(input.commandPulse + 0.08, 0, 1);
+      targetCount = clamp(1300 + Math.floor(memory.variation * 420), range.min, range.max);
+      saveMemory();
     }
   });
 
@@ -373,11 +421,11 @@
   window.addEventListener("beforeunload", saveMemory);
 
   resize();
-  fillParticles();
+  ensureParticles();
   ctx.fillStyle = "#0b0b0d";
   ctx.fillRect(0, 0, w, h);
   requestAnimationFrame((t) => {
-    lastTime = t;
-    tick(t);
+    lastMs = t;
+    frame(t);
   });
 })();
