@@ -1,10 +1,2 @@
-html, body {
-  margin: 0;
-  padding: 0;
-  background: black;
-  overflow: hidden;
-}
-
-canvas {
-  display: block;
-}
+html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0b0d; }
+canvas { display: block; width: 100vw; height: 100vh; }
