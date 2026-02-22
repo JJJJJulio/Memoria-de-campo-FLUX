@@ -12,12 +12,13 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: radial-gradient(circle at 50% 55%, #191924 0%, #08080c 45%, #040406 100%);
+  background: #0b0b0d;
 }
 
 #c {
   display: block;
   width: 100vw;
   height: 100vh;
+  background: #0b0b0d;
   cursor: crosshair;
 }
