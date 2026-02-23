@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <canvas id="c" aria-label="Memoria de Campo FLUX"></canvas>
+    <main id="app" aria-label="Memoria de Campo FLUX"></main>
 
     <aside id="hud" aria-live="polite">
       <p class="hud-title">FLUX</p>
@@ -16,11 +16,14 @@
       <p><kbd>M</kbd> mutación</p>
       <p><kbd>H</kbd> ocultar / mostrar</p>
       <p><kbd>X</kbd> alternar extracción</p>
+      <p><kbd>V</kbd> modo color</p>
       <p><kbd>Click der.</kbd> extraer chakana</p>
       <p id="hud-state" class="hud-state">Extracción: inactiva</p>
+      <p id="hud-mode" class="hud-mode">Modo: Blanco y negro</p>
       <p id="hud-command" class="hud-command">Comando: listo</p>
     </aside>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
     <script src="main.js"></script>
   </body>
 </html>
