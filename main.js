@@ -176,14 +176,30 @@
     announceCommand(`V modo ${input.mode === "mono" ? "B/N" : "Paleta"}`);
   }
 
+  function lerpRgb(a, b, t) {
+    return [
+      a[0] + (b[0] - a[0]) * t,
+      a[1] + (b[1] - a[1]) * t,
+      a[2] + (b[2] - a[2]) * t,
+    ];
+  }
+
   function getParticleColor(p) {
     if (input.mode === "mono") {
       const lift = p.lock ? 10 : 0;
-      return [tone.mono[0] + lift, tone.mono[1] + lift, tone.mono[2] + lift];
+      const g = [tone.mono[0] + lift, tone.mono[1] + lift, tone.mono[2] + lift];
+      return g;
     }
-    const c = paletteKlee[p.paletteIndex % paletteKlee.length];
+
+    const base = paletteKlee[p.paletteIndex % paletteKlee.length];
+    const mix = paletteKlee[p.mixIndex % paletteKlee.length];
     const boost = p.tier === 2 ? 8 : p.tier === 1 ? 5 : 2;
-    return [Math.min(255, c[0] + boost), Math.min(255, c[1] + boost), Math.min(255, c[2] + boost)];
+    const mixed = lerpRgb(base, mix, p.mixAmount);
+    return [
+      Math.min(255, mixed[0] + boost),
+      Math.min(255, mixed[1] + boost),
+      Math.min(255, mixed[2] + boost),
+    ];
   }
 
   function chakanaMask(nx, ny) {
@@ -232,6 +248,8 @@
       lock: rand() < 0.34,
       life: 190 + rand() * 260,
       paletteIndex: Math.floor(rand() * paletteKlee.length),
+      mixIndex: Math.floor(rand() * paletteKlee.length),
+      mixAmount: 0,
       dancePhase: rand() * Math.PI * 2,
       danceAxis: rand() < 0.5 ? -1 : 1,
     };
@@ -470,12 +488,30 @@
         p.target = Math.floor(rand() * Math.max(1, chakanaPoints.length));
       }
 
+      if (input.mode === "palette") {
+        const mdx = p.x - input.x;
+        const mdy = p.y - input.y;
+        const md = Math.hypot(mdx, mdy);
+        const cursorRadius = Math.min(w, h) * (input.pointerDown ? 0.34 : 0.25);
+        const influence = input.active ? clamp(1 - md / Math.max(1, cursorRadius), 0, 1) : 0;
+        const agitation = clamp(input.filteredSpeed * 3 + (input.pointerDown ? 0.32 : 0), 0, 1.1);
+        const mixTarget = influence * (0.2 + agitation * 0.8);
+        p.mixAmount += (mixTarget - p.mixAmount) * 0.13;
+        p.mixAmount = clamp(p.mixAmount, 0, 0.92);
+
+        if (mixTarget > 0.12 && Math.random() < 0.03 + mixTarget * 0.05) {
+          p.mixIndex = Math.floor((p.paletteIndex + 1 + rand() * (paletteKlee.length - 1)) % paletteKlee.length);
+        }
+      } else {
+        p.mixAmount *= 0.92;
+      }
+
       const base = p.tier === 0 ? 0.32 : p.tier === 1 ? 0.43 : 0.56;
       const modeBoost = input.mode === "palette" ? 0.08 : 0;
-      const alpha = clamp(base + modeBoost + formation * 0.1 + visibilityEnergy * 0.16 + ritualWave * 0.15 + input.commandPulse * 0.1 + (p.lock ? input.extractionPulse * 0.12 : 0), 0.08, 0.95);
+      const alpha = clamp(base + modeBoost + formation * 0.1 + visibilityEnergy * 0.16 + ritualWave * 0.15 + input.commandPulse * 0.1 + (p.lock ? input.extractionPulse * 0.12 : 0) - p.mixAmount * 0.18, 0.08, 0.95);
       const [r, g, b] = getParticleColor(p);
       fill(r, g, b, alpha * 255);
-      circle(p.x, p.y, p.size * 2);
+      circle(p.x, p.y, p.size * 2 * (1 + p.mixAmount * 0.65));
     }
 
     const veilBase = input.mode === "palette" ? 0.02 : 0.04;
