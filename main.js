@@ -3,6 +3,7 @@
   const ctx = canvas.getContext("2d", { alpha: false });
   const hud = document.getElementById("hud");
   const hudState = document.getElementById("hud-state");
+  const hudCommand = document.getElementById("hud-command");
 
   // 5) MEMORIA LOCAL
   // Propósito: mantener huella entre sesiones para que la obra cambie sutilmente.
@@ -21,6 +22,7 @@
     ritualUntil: 0,
     residue: 0,
     energy: memory.energyLevel,
+    calmUntil: 0,
   };
 
   // 3) CAMPO DE INTERACCIÓN
@@ -45,6 +47,7 @@
     },
     extractionArmed: !!memory.extractionArmed,
     extractionPulse: 0,
+    commandMessageUntil: 0,
   };
 
   // 1) MOTOR DE PARTÍCULAS
@@ -115,6 +118,14 @@
     );
   }
 
+
+
+  function announceCommand(text) {
+    if (!hudCommand) return;
+    hudCommand.textContent = `Comando: ${text}`;
+    hudCommand.classList.add("active");
+    input.commandMessageUntil = performance.now() + 1400;
+  }
 
   function updateHudState() {
     if (!hudState) return;
@@ -231,7 +242,7 @@
     if (input.rightDown) input.chakanaGrip.strength = clamp(input.chakanaGrip.strength + 0.03, 0, 1.35);
     else input.chakanaGrip.strength *= 0.9;
 
-    const targetEnergy =
+    let targetEnergy =
       machine.current === "latencia"
         ? 0.24
         : machine.current === "emergencia"
@@ -239,6 +250,11 @@
           : machine.current === "resonancia"
             ? 0.52
             : 0.68;
+
+    if (nowMs < machine.calmUntil) {
+      targetEnergy = Math.min(targetEnergy, 0.16);
+      machine.current = "calma";
+    }
 
     machine.energy += (targetEnergy - machine.energy) * 0.02;
 
@@ -249,6 +265,12 @@
     const blend = idleFactor > 0.65 ? 0.009 : 0.02;
     visibilityEnergy += (targetVisibility - visibilityEnergy) * blend;
     visibilityEnergy = clamp(visibilityEnergy, 0.08, 1);
+
+    if (hudCommand && input.commandMessageUntil > 0 && nowMs > input.commandMessageUntil) {
+      hudCommand.textContent = "Comando: listo";
+      hudCommand.classList.remove("active");
+      input.commandMessageUntil = 0;
+    }
   }
 
   function optimizeParticles(dtMs) {
@@ -532,13 +554,18 @@
   });
 
   window.addEventListener("keydown", (ev) => {
-    if (ev.key === "r" || ev.key === "R") ritualAt(cx, cy);
+    if (ev.key === "r" || ev.key === "R") {
+      ritualAt(cx, cy);
+      announceCommand("R ritual");
+    }
     if (ev.key === "c" || ev.key === "C") {
-      machine.energy = clamp(machine.energy - 0.1, 0, 1);
-      machine.residue = clamp(machine.residue - 0.2, 0, 1.2);
-      input.commandPulse = clamp(input.commandPulse + 0.05, 0, 1);
+      machine.calmUntil = performance.now() + 6000;
+      machine.energy = clamp(machine.energy - 0.14, 0, 1);
+      machine.residue = clamp(machine.residue - 0.25, 0, 1.2);
+      input.commandPulse = clamp(input.commandPulse + 0.07, 0, 1);
       input.revealBoost = clamp(input.revealBoost + 0.06, 0, 1.5);
       input.lastInteractionMs = performance.now();
+      announceCommand("C calma 6s");
     }
     if (ev.key === "m" || ev.key === "M") {
       memory.variation = (memory.variation + 0.041) % 1;
@@ -547,6 +574,7 @@
       input.revealBoost = clamp(input.revealBoost + 0.08, 0, 1.5);
       input.lastInteractionMs = performance.now();
       saveMemory();
+      announceCommand("M mutación");
     }
     if (ev.key === "h" || ev.key === "H") toggleHud();
     if (ev.key === "x" || ev.key === "X") {
@@ -556,6 +584,7 @@
       input.lastInteractionMs = performance.now();
       updateHudState();
       saveMemory();
+      announceCommand(`X extracción ${input.extractionArmed ? "ON" : "OFF"}`);
     }
   });
 
