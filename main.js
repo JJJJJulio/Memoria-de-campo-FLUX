@@ -34,8 +34,14 @@
     lastMoveMs: 0,
     commandPulse: 0,
     pointerDown: false,
+    rightDown: false,
     revealBoost: 0,
     lastInteractionMs: 0,
+    chakanaGrip: {
+      x: 0,
+      y: 0,
+      strength: 0,
+    },
   };
 
   // 1) MOTOR DE PARTÍCULAS
@@ -288,6 +294,34 @@
     p.vy += (dy / d) * wind * dtMs * 0.011;
   }
 
+
+  function applyChakanaGrip(p, dtMs) {
+    if (!input.rightDown) return;
+    if (!p.lock) return;
+
+    // Polaridad: punto de atracción en el cursor y punto espejo de repulsión en eje central.
+    const ax = input.chakanaGrip.x;
+    const ay = input.chakanaGrip.y;
+    const bx = cx - (ax - cx);
+    const by = cy - (ay - cy);
+
+    const adx = ax - p.x;
+    const ady = ay - p.y;
+    const bdx = p.x - bx;
+    const bdy = p.y - by;
+
+    const da = Math.hypot(adx, ady) + 1;
+    const db = Math.hypot(bdx, bdy) + 1;
+
+    const attract = input.chakanaGrip.strength * 0.026;
+    const repel = input.chakanaGrip.strength * 0.018;
+
+    p.vx += (adx / da) * attract * dtMs;
+    p.vy += (ady / da) * attract * dtMs;
+    p.vx += (bdx / db) * repel * dtMs;
+    p.vy += (bdy / db) * repel * dtMs;
+  }
+
   function updateParticles(dtMs) {
     ensureParticles();
 
@@ -300,6 +334,7 @@
       p.vy += f.fy;
 
       applyPointerWind(p, dtMs);
+      applyChakanaGrip(p, dtMs);
 
       if (p.lock && f.reveal > 0.74) {
         // Anclaje parcial para concretar la forma de la chakana cuando ya emergió.
@@ -427,21 +462,48 @@
     const speedNorm = clamp(input.speed * 0.22, 0, 1);
     input.revealBoost = clamp(input.revealBoost + speedNorm * 0.08 + 0.007, 0, 1.4);
     input.lastInteractionMs = now;
+
+    if (input.rightDown) {
+      input.chakanaGrip.x = ev.clientX;
+      input.chakanaGrip.y = ev.clientY;
+    }
   });
 
   canvas.addEventListener("pointerdown", (ev) => {
-    input.pointerDown = true;
     input.lastInteractionMs = performance.now();
-    ritualAt(ev.clientX, ev.clientY);
+
+    if (ev.button === 0) {
+      input.pointerDown = true;
+      ritualAt(ev.clientX, ev.clientY);
+      return;
+    }
+
+    if (ev.button === 2) {
+      input.rightDown = true;
+      input.chakanaGrip.x = ev.clientX;
+      input.chakanaGrip.y = ev.clientY;
+      input.chakanaGrip.strength = 1;
+      input.revealBoost = clamp(input.revealBoost + 0.14, 0, 1.5);
+    }
   });
 
-  window.addEventListener("pointerup", () => {
-    input.pointerDown = false;
+  window.addEventListener("pointerup", (ev) => {
+    if (ev.button === 0) input.pointerDown = false;
+    if (ev.button === 2) {
+      input.rightDown = false;
+      input.chakanaGrip.strength = 0;
+    }
   });
 
   canvas.addEventListener("pointerleave", () => {
     input.active = false;
     input.speed = 0;
+    input.rightDown = false;
+    input.chakanaGrip.strength = 0;
+  });
+
+  canvas.addEventListener("contextmenu", (ev) => {
+    ev.preventDefault();
   });
 
   window.addEventListener("keydown", (ev) => {
