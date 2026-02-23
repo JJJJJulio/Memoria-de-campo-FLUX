@@ -2,6 +2,7 @@
   const canvas = document.getElementById("c");
   const ctx = canvas.getContext("2d", { alpha: false });
   const hud = document.getElementById("hud");
+  const hudState = document.getElementById("hud-state");
 
   // 5) MEMORIA LOCAL
   // Propósito: mantener huella entre sesiones para que la obra cambie sutilmente.
@@ -42,6 +43,8 @@
       y: 0,
       strength: 0,
     },
+    extractionArmed: !!memory.extractionArmed,
+    extractionPulse: 0,
   };
 
   // 1) MOTOR DE PARTÍCULAS
@@ -86,6 +89,7 @@
         energyLevel: Number.isFinite(raw.energyLevel) ? raw.energyLevel : 0.3,
         variation: Number.isFinite(raw.variation) ? raw.variation : Math.random(),
         hudVisible: raw.hudVisible !== false,
+        extractionArmed: raw.extractionArmed === true,
       };
     } catch (_) {
       return {
@@ -93,6 +97,7 @@
         energyLevel: 0.3,
         variation: Math.random(),
         hudVisible: true,
+        extractionArmed: false,
       };
     }
   }
@@ -105,8 +110,17 @@
         energyLevel: Number(machine.energy.toFixed(4)),
         variation: Number(memory.variation.toFixed(4)),
         hudVisible: !hud.classList.contains("hidden"),
+        extractionArmed: input.extractionArmed,
       }),
     );
+  }
+
+
+  function updateHudState() {
+    if (!hudState) return;
+    const active = input.extractionArmed || input.rightDown || input.chakanaGrip.strength > 0.08;
+    hudState.textContent = active ? "Extracción: activa" : "Extracción: inactiva";
+    hudState.classList.toggle("active", active);
   }
 
   function rngFactory(seed) {
@@ -212,6 +226,10 @@
     machine.residue = Math.max(0, machine.residue * 0.994 - 0.0005);
     input.commandPulse = Math.max(0, input.commandPulse * 0.965 - 0.004);
     input.revealBoost = Math.max(0, input.revealBoost * 0.988 - 0.0012);
+    input.extractionPulse = Math.max(0, input.extractionPulse * 0.95 - 0.006);
+
+    if (input.rightDown) input.chakanaGrip.strength = clamp(input.chakanaGrip.strength + 0.03, 0, 1.35);
+    else input.chakanaGrip.strength *= 0.9;
 
     const targetEnergy =
       machine.current === "latencia"
@@ -296,12 +314,13 @@
 
 
   function applyChakanaGrip(p, dtMs) {
-    if (!input.rightDown) return;
     if (!p.lock) return;
+    const extractionOn = input.rightDown || input.extractionArmed;
+    if (!extractionOn) return;
 
     // Polaridad: punto de atracción en el cursor y punto espejo de repulsión en eje central.
-    const ax = input.chakanaGrip.x;
-    const ay = input.chakanaGrip.y;
+    const ax = input.chakanaGrip.x || input.x || cx;
+    const ay = input.chakanaGrip.y || input.y || cy;
     const bx = cx - (ax - cx);
     const by = cy - (ay - cy);
 
@@ -313,8 +332,9 @@
     const da = Math.hypot(adx, ady) + 1;
     const db = Math.hypot(bdx, bdy) + 1;
 
-    const attract = input.chakanaGrip.strength * 0.026;
-    const repel = input.chakanaGrip.strength * 0.018;
+    const strength = Math.max(input.chakanaGrip.strength, input.extractionArmed ? 0.68 : 0);
+    const attract = strength * 0.026;
+    const repel = strength * 0.018;
 
     p.vx += (adx / da) * attract * dtMs;
     p.vy += (ady / da) * attract * dtMs;
@@ -378,9 +398,10 @@
       const p = particles[i];
       const light = p.tier === 0 ? 78 : p.tier === 1 ? 84 : 91;
       const base = p.tier === 0 ? 0.24 : p.tier === 1 ? 0.37 : 0.5;
-      const alpha = clamp(base + formation * 0.1 + visibilityEnergy * 0.16 + ritualWave * 0.15 + input.commandPulse * 0.1, 0.08, 0.9);
+      const extractionTint = p.lock ? input.extractionPulse * 16 : 0;
+      const alpha = clamp(base + formation * 0.1 + visibilityEnergy * 0.16 + ritualWave * 0.15 + input.commandPulse * 0.1 + (p.lock ? input.extractionPulse * 0.12 : 0), 0.08, 0.9);
 
-      ctx.fillStyle = `hsla(${p.warmth}, 17%, ${light}%, ${alpha})`;
+      ctx.fillStyle = `hsla(${p.warmth + extractionTint}, 17%, ${light}%, ${alpha})`;
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
       ctx.fill();
@@ -482,8 +503,10 @@
       input.rightDown = true;
       input.chakanaGrip.x = ev.clientX;
       input.chakanaGrip.y = ev.clientY;
-      input.chakanaGrip.strength = 1;
+      input.chakanaGrip.strength = Math.max(input.chakanaGrip.strength, 0.62);
+      input.extractionPulse = clamp(input.extractionPulse + 0.35, 0, 1.4);
       input.revealBoost = clamp(input.revealBoost + 0.14, 0, 1.5);
+      updateHudState();
     }
   });
 
@@ -491,7 +514,8 @@
     if (ev.button === 0) input.pointerDown = false;
     if (ev.button === 2) {
       input.rightDown = false;
-      input.chakanaGrip.strength = 0;
+      if (!input.extractionArmed) input.chakanaGrip.strength = 0;
+      updateHudState();
     }
   });
 
@@ -499,7 +523,8 @@
     input.active = false;
     input.speed = 0;
     input.rightDown = false;
-    input.chakanaGrip.strength = 0;
+    if (!input.extractionArmed) input.chakanaGrip.strength = 0;
+    updateHudState();
   });
 
   canvas.addEventListener("contextmenu", (ev) => {
@@ -524,12 +549,21 @@
       saveMemory();
     }
     if (ev.key === "h" || ev.key === "H") toggleHud();
+    if (ev.key === "x" || ev.key === "X") {
+      input.extractionArmed = !input.extractionArmed;
+      if (!input.extractionArmed && !input.rightDown) input.chakanaGrip.strength = 0;
+      input.extractionPulse = clamp(input.extractionPulse + 0.3, 0, 1.4);
+      input.lastInteractionMs = performance.now();
+      updateHudState();
+      saveMemory();
+    }
   });
 
   window.addEventListener("resize", resize);
   window.addEventListener("beforeunload", saveMemory);
 
   if (!memory.hudVisible) hud.classList.add("hidden");
+  updateHudState();
 
   resize();
   ensureParticles();
