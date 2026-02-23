@@ -140,13 +140,21 @@
     saveMemory();
   }
 
+  function toggleMode() {
+    input.mode = input.mode === "mono" ? "palette" : "mono";
+    updateHudState();
+    saveMemory();
+    announceCommand(`V modo ${input.mode === "mono" ? "B/N" : "Paleta"}`);
+  }
+
   function getParticleColor(p) {
     if (input.mode === "mono") {
       const light = p.lock ? 88 : 78;
       return [light, light, light];
     }
     const c = paletteKlee[p.paletteIndex % paletteKlee.length];
-    return c;
+    const boost = p.tier === 2 ? 16 : p.tier === 1 ? 10 : 6;
+    return [Math.min(255, c[0] + boost), Math.min(255, c[1] + boost), Math.min(255, c[2] + boost)];
   }
 
   function chakanaMask(nx, ny) {
@@ -343,6 +351,12 @@
     if (!memory.hudVisible) hud.classList.add("hidden");
     updateHudState();
 
+    if (hudMode) {
+      hudMode.style.cursor = "pointer";
+      hudMode.title = "Cambiar modo de color";
+      hudMode.addEventListener("click", toggleMode);
+    }
+
     document.addEventListener("contextmenu", (ev) => {
       if (ev.target.tagName === "CANVAS") ev.preventDefault();
     });
@@ -393,13 +407,15 @@
       }
 
       const base = p.tier === 0 ? 0.34 : p.tier === 1 ? 0.46 : 0.6;
-      const alpha = clamp(base + formation * 0.1 + visibilityEnergy * 0.16 + ritualWave * 0.15 + input.commandPulse * 0.1 + (p.lock ? input.extractionPulse * 0.12 : 0), 0.08, 0.9);
+      const modeBoost = input.mode === "palette" ? 0.12 : 0;
+      const alpha = clamp(base + modeBoost + formation * 0.1 + visibilityEnergy * 0.16 + ritualWave * 0.15 + input.commandPulse * 0.1 + (p.lock ? input.extractionPulse * 0.12 : 0), 0.08, 0.95);
       const [r, g, b] = getParticleColor(p);
       fill(r, g, b, alpha * 255);
       circle(p.x, p.y, p.size * 2);
     }
 
-    fill(7, 7, 9, clamp(0.042 - machine.energy * 0.014, 0.01, 0.06) * 255);
+    const veil = input.mode === "palette" ? clamp(0.02 - machine.energy * 0.008, 0.003, 0.028) : clamp(0.042 - machine.energy * 0.014, 0.01, 0.06);
+    fill(7, 7, 9, veil * 255);
     rect(0, 0, w, h);
 
     if (nowMs - machine.startMs > 2600 && (nowMs - machine.startMs) % 3500 < dtMs) saveMemory();
@@ -494,12 +510,7 @@
       saveMemory();
       announceCommand(`X extracción ${input.extractionArmed ? "ON" : "OFF"}`);
     }
-    if (k === "v") {
-      input.mode = input.mode === "mono" ? "palette" : "mono";
-      updateHudState();
-      saveMemory();
-      announceCommand(`V modo ${input.mode === "mono" ? "B/N" : "Paleta"}`);
-    }
+    if (k === "v") toggleMode();
     if (k === "h") {
       toggleHud();
       announceCommand("H HUD");
