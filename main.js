@@ -278,9 +278,9 @@
       const mdx = p.x - input.x;
       const mdy = p.y - input.y;
       const md = Math.hypot(mdx, mdy) + 1;
-      const influence = clamp(1 - md / (Math.min(w, h) * 0.55), 0, 1);
-      const turbulence = clamp(input.speed * 0.42, 0, 10.2);
-      const wind = turbulence * influence * (input.pointerDown ? 1.45 : 1);
+      const influence = clamp(1 - md / (Math.min(w, h) * 0.78), 0, 1);
+      const turbulence = clamp(input.speed * 1.05, 0, 20);
+      const wind = turbulence * influence * (input.pointerDown ? 1.7 : 1.2);
       p.vx += (mdx / md) * wind * dtMs * 0.011;
       p.vy += (mdy / md) * wind * dtMs * 0.011;
     }
@@ -363,7 +363,7 @@
     fill(11, 11, 13, 28);
     rect(0, 0, w, h);
 
-    const guideAlpha = (0.02 + formation * 0.2) * visibilityEnergy;
+    const guideAlpha = (0.05 + formation * 0.28) * visibilityEnergy;
     fill(236, 232, 224, 255 * guideAlpha);
     for (let i = 0; i < chakanaPoints.length; i += 4) {
       const p = chakanaPoints[i];
@@ -392,7 +392,7 @@
         p.target = Math.floor(rand() * Math.max(1, chakanaPoints.length));
       }
 
-      const base = p.tier === 0 ? 0.24 : p.tier === 1 ? 0.37 : 0.5;
+      const base = p.tier === 0 ? 0.34 : p.tier === 1 ? 0.46 : 0.6;
       const alpha = clamp(base + formation * 0.1 + visibilityEnergy * 0.16 + ritualWave * 0.15 + input.commandPulse * 0.1 + (p.lock ? input.extractionPulse * 0.12 : 0), 0.08, 0.9);
       const [r, g, b] = getParticleColor(p);
       fill(r, g, b, alpha * 255);
@@ -425,7 +425,7 @@
     input.lastMoveMs = now;
     input.active = true;
     input.lastInteractionMs = now;
-    input.revealBoost = clamp(input.revealBoost + clamp(input.speed * 0.22, 0, 1) * 0.08 + 0.007, 0, 1.4);
+    input.revealBoost = clamp(input.revealBoost + clamp(input.speed * 0.45, 0, 1.2) * 0.14 + 0.01, 0, 1.6);
     if (input.rightDown) {
       input.chakanaGrip.x = mouseX;
       input.chakanaGrip.y = mouseY;
@@ -507,4 +507,13 @@
   }
 
   window.addEventListener("beforeunload", saveMemory);
+
+  // Exporta callbacks para p5.js en modo global (setup/draw/events).
+  window.setup = setup;
+  window.draw = draw;
+  window.windowResized = windowResized;
+  window.mouseMoved = mouseMoved;
+  window.mousePressed = mousePressed;
+  window.mouseReleased = mouseReleased;
+  window.keyPressed = keyPressed;
 })();
