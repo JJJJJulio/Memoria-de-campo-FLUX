@@ -3,6 +3,7 @@
   const hudState = document.getElementById("hud-state");
   const hudMode = document.getElementById("hud-mode");
   const hudCommand = document.getElementById("hud-command");
+  const hudDance = document.getElementById("hud-dance");
 
   const STORAGE_KEY = "memoria.flux.p5.v1";
 
@@ -51,6 +52,7 @@
     commandMessageUntil: 0,
     chakanaGrip: { x: 0, y: 0, strength: 0 },
     mode: memory.mode === "palette" ? "palette" : "mono",
+    danceMode: clamp(Number(memory.danceMode) || 1, 1, 5),
   };
 
   const particles = [];
@@ -82,6 +84,7 @@
         hudVisible: raw.hudVisible !== false,
         extractionArmed: raw.extractionArmed === true,
         mode: raw.mode === "palette" ? "palette" : "mono",
+        danceMode: Number.isFinite(raw.danceMode) ? clamp(Math.round(raw.danceMode), 1, 5) : 1,
       };
     } catch (_) {
       return {
@@ -91,6 +94,7 @@
         hudVisible: true,
         extractionArmed: false,
         mode: "mono",
+        danceMode: 1,
       };
     }
   }
@@ -105,6 +109,7 @@
         hudVisible: !hud.classList.contains("hidden"),
         extractionArmed: input.extractionArmed,
         mode: input.mode,
+        danceMode: input.danceMode,
       }),
     );
   }
@@ -128,6 +133,11 @@
       hudMode.textContent = txt;
       hudMode.classList.toggle("active", input.mode === "palette");
     }
+
+    if (hudDance) {
+      hudDance.textContent = `Baile chakana: modo ${input.danceMode}`;
+      hudDance.classList.toggle("active", input.danceMode > 1);
+    }
   }
 
   function rngFactory(seed) {
@@ -150,6 +160,13 @@
   function toggleHud() {
     hud.classList.toggle("hidden");
     saveMemory();
+  }
+
+  function setDanceMode(mode) {
+    input.danceMode = clamp(Math.round(mode), 1, 5);
+    updateHudState();
+    saveMemory();
+    announceCommand(`Baile chakana modo ${input.danceMode}`);
   }
 
   function toggleMode() {
@@ -215,6 +232,8 @@
       lock: rand() < 0.34,
       life: 190 + rand() * 260,
       paletteIndex: Math.floor(rand() * paletteKlee.length),
+      dancePhase: rand() * Math.PI * 2,
+      danceAxis: rand() < 0.5 ? -1 : 1,
     };
   }
 
@@ -263,6 +282,18 @@
     if (fpsAvg < 40 && targetCount > range.min) targetCount -= 10;
     if (fpsAvg > 57 && targetCount < range.max) targetCount += 5;
     if (particles.length > targetCount) particles.splice(0, Math.min(18, particles.length - targetCount));
+  }
+
+  function chakanaDanceProfile() {
+    const mode = input.danceMode;
+    const amount = (mode - 1) / 4;
+    return {
+      amount,
+      radius: 0.8 + amount * 7.8,
+      orbit: 0.25 + amount * 1.1,
+      flutter: 0.18 + amount * 1.25,
+      pulse: 0.12 + amount * 0.9,
+    };
   }
 
   function applyForces(p, dtMs) {
@@ -324,9 +355,20 @@
       p.vy += (bdy / db) * strength * 0.014 * dt;
     }
 
-    if (p.lock && reveal > 0.74) {
-      p.vx *= 0.7;
-      p.vy *= 0.7;
+    if (p.lock) {
+      const dance = chakanaDanceProfile();
+      const lockReveal = clamp(reveal * 0.6 + 0.35, 0.25, 1);
+      const beat = phase * dance.orbit + p.dancePhase;
+      const radial = dance.radius * lockReveal;
+      const pulse = Math.sin(phase * dance.pulse + p.target * 0.017) * (0.3 + dance.amount * 0.9);
+      const ox = Math.cos(beat) * radial + Math.sin(phase * dance.flutter + p.y * 0.012) * radial * 0.35;
+      const oy = Math.sin(beat * p.danceAxis) * radial + Math.cos(phase * dance.flutter + p.x * 0.012) * radial * 0.35;
+      p.vx += (ox + pulse) * 0.0026 * dt;
+      p.vy += (oy - pulse) * 0.0026 * dt;
+      if (reveal > 0.74 && input.danceMode <= 2) {
+        p.vx *= 0.82;
+        p.vy *= 0.82;
+      }
     }
 
     const maxSpeed = 1.75 + machine.energy * 1.4 + (input.rightDown || input.extractionArmed ? 0.5 : 0);
@@ -552,6 +594,11 @@
     if (k === "h") {
       toggleHud();
       announceCommand("H HUD");
+      handled = true;
+    }
+
+    if (k >= "1" && k <= "5") {
+      setDanceMode(Number(k));
       handled = true;
     }
 
