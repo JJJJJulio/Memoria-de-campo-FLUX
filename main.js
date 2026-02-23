@@ -3,21 +3,28 @@
   const hudState = document.getElementById("hud-state");
   const hudMode = document.getElementById("hud-mode");
   const hudCommand = document.getElementById("hud-command");
+  const hudDance = document.getElementById("hud-dance");
 
   const STORAGE_KEY = "memoria.flux.p5.v1";
 
+  // Paleta inspirada en Paul Klee: tonos cálidos, terrosos y saturación moderada.
   const paletteKlee = [
-    [234, 73, 50],
-    [255, 233, 66],
-    [121, 188, 135],
-    [84, 128, 187],
-    [240, 160, 115],
-    [199, 142, 86],
-    [211, 176, 123],
-    [179, 142, 146],
-    [109, 112, 128],
-    [245, 196, 194],
+    [189, 135, 66], // ocre cálido
+    [171, 84, 60], // rojo terracota
+    [63, 86, 124], // azul profundo
+    [108, 122, 78], // verde oliva
+    [216, 186, 106], // amarillo suave
+    [231, 224, 206], // blanco roto
+    [149, 114, 95],
+    [126, 93, 109],
   ];
+
+  const tone = {
+    bg: [14, 13, 11],
+    veil: [10, 9, 8],
+    guide: [229, 220, 202],
+    mono: [90, 88, 82],
+  };
 
   const memory = loadMemory();
 
@@ -33,6 +40,7 @@
     x: 0,
     y: 0,
     speed: 0,
+    filteredSpeed: 0,
     active: false,
     lastMoveMs: 0,
     lastInteractionMs: 0,
@@ -44,6 +52,7 @@
     commandMessageUntil: 0,
     chakanaGrip: { x: 0, y: 0, strength: 0 },
     mode: memory.mode === "palette" ? "palette" : "mono",
+    danceMode: clamp(Number(memory.danceMode) || 1, 1, 5),
   };
 
   const particles = [];
@@ -75,6 +84,7 @@
         hudVisible: raw.hudVisible !== false,
         extractionArmed: raw.extractionArmed === true,
         mode: raw.mode === "palette" ? "palette" : "mono",
+        danceMode: Number.isFinite(raw.danceMode) ? clamp(Math.round(raw.danceMode), 1, 5) : 1,
       };
     } catch (_) {
       return {
@@ -84,6 +94,7 @@
         hudVisible: true,
         extractionArmed: false,
         mode: "mono",
+        danceMode: 1,
       };
     }
   }
@@ -98,6 +109,7 @@
         hudVisible: !hud.classList.contains("hidden"),
         extractionArmed: input.extractionArmed,
         mode: input.mode,
+        danceMode: input.danceMode,
       }),
     );
   }
@@ -121,6 +133,11 @@
       hudMode.textContent = txt;
       hudMode.classList.toggle("active", input.mode === "palette");
     }
+
+    if (hudDance) {
+      hudDance.textContent = `Baile chakana: modo ${input.danceMode}`;
+      hudDance.classList.toggle("active", input.danceMode > 1);
+    }
   }
 
   function rngFactory(seed) {
@@ -135,9 +152,21 @@
     return Math.max(min, Math.min(max, v));
   }
 
+  function smoothStep(edge0, edge1, x) {
+    const t = clamp((x - edge0) / Math.max(0.0001, edge1 - edge0), 0, 1);
+    return t * t * (3 - 2 * t);
+  }
+
   function toggleHud() {
     hud.classList.toggle("hidden");
     saveMemory();
+  }
+
+  function setDanceMode(mode) {
+    input.danceMode = clamp(Math.round(mode), 1, 5);
+    updateHudState();
+    saveMemory();
+    announceCommand(`Baile chakana modo ${input.danceMode}`);
   }
 
   function toggleMode() {
@@ -149,11 +178,11 @@
 
   function getParticleColor(p) {
     if (input.mode === "mono") {
-      const light = p.lock ? 88 : 78;
-      return [light, light, light];
+      const lift = p.lock ? 10 : 0;
+      return [tone.mono[0] + lift, tone.mono[1] + lift, tone.mono[2] + lift];
     }
     const c = paletteKlee[p.paletteIndex % paletteKlee.length];
-    const boost = p.tier === 2 ? 16 : p.tier === 1 ? 10 : 6;
+    const boost = p.tier === 2 ? 8 : p.tier === 1 ? 5 : 2;
     return [Math.min(255, c[0] + boost), Math.min(255, c[1] + boost), Math.min(255, c[2] + boost)];
   }
 
@@ -203,6 +232,8 @@
       lock: rand() < 0.34,
       life: 190 + rand() * 260,
       paletteIndex: Math.floor(rand() * paletteKlee.length),
+      dancePhase: rand() * Math.PI * 2,
+      danceAxis: rand() < 0.5 ? -1 : 1,
     };
   }
 
@@ -253,7 +284,20 @@
     if (particles.length > targetCount) particles.splice(0, Math.min(18, particles.length - targetCount));
   }
 
+  function chakanaDanceProfile() {
+    const mode = input.danceMode;
+    const amount = (mode - 1) / 4;
+    return {
+      amount,
+      radius: 0.8 + amount * 7.8,
+      orbit: 0.25 + amount * 1.1,
+      flutter: 0.18 + amount * 1.25,
+      pulse: 0.12 + amount * 0.9,
+    };
+  }
+
   function applyForces(p, dtMs) {
+    const dt = clamp(dtMs, 8, 30);
     const t = chakanaPoints[p.target] || { x: cx, y: cy, layer: 0.5 };
     const dx = t.x - p.x;
     const dy = t.y - p.y;
@@ -261,25 +305,25 @@
 
     const reveal = clamp((formation - t.layer * 0.8) * 2.5, 0, 1);
     const pull = 0.003 + reveal * 0.04;
-    p.vx += (dx / dist) * pull * dtMs * 0.06;
-    p.vy += (dy / dist) * pull * dtMs * 0.06;
+    p.vx += (dx / dist) * pull * dt * 0.06;
+    p.vy += (dy / dist) * pull * dt * 0.06;
 
     const nx = (p.x - cx) / (Math.min(w, h) * 0.55);
     const ny = (p.y - cy) / (Math.min(w, h) * 0.55);
     const swirl = Math.sin(nx * 1.32 + phase * 0.33) * Math.cos(ny * 1.24 - phase * 0.3);
-    p.vx += -ny * swirl * 0.0023 * dtMs * 0.06;
-    p.vy += nx * swirl * 0.0023 * dtMs * 0.06;
+    p.vx += -ny * swirl * 0.002 * dt * 0.06;
+    p.vy += nx * swirl * 0.002 * dt * 0.06;
 
-    p.vx += Math.sin((p.y + phase * 50) * 0.0042) * machine.residue * 0.011 * dtMs * 0.06;
-    p.vy += Math.cos((p.x - phase * 50) * 0.0042) * machine.residue * 0.011 * dtMs * 0.06;
+    p.vx += Math.sin((p.y + phase * 50) * 0.0042) * machine.residue * 0.01 * dt * 0.06;
+    p.vy += Math.cos((p.x - phase * 50) * 0.0042) * machine.residue * 0.01 * dt * 0.06;
 
     if (ritualWave > 0) {
       const rx = p.x - ritualCenter.x;
       const ry = p.y - ritualCenter.y;
       const rr = Math.hypot(rx, ry) + 0.001;
       const wave = Math.sin(rr * 0.028 - (1 - ritualWave) * 10.8) * ritualWave;
-      p.vx += (rx / rr) * wave * 0.014 * dtMs * 0.06;
-      p.vy += (ry / rr) * wave * 0.014 * dtMs * 0.06;
+      p.vx += (rx / rr) * wave * 0.014 * dt * 0.06;
+      p.vy += (ry / rr) * wave * 0.014 * dt * 0.06;
     }
 
     if (input.active) {
@@ -287,10 +331,10 @@
       const mdy = p.y - input.y;
       const md = Math.hypot(mdx, mdy) + 1;
       const influence = clamp(1 - md / (Math.min(w, h) * 0.78), 0, 1);
-      const turbulence = clamp(input.speed * 1.05, 0, 20);
+      const turbulence = clamp(input.filteredSpeed * 1.05, 0, 20);
       const wind = turbulence * influence * (input.pointerDown ? 1.7 : 1.2);
-      p.vx += (mdx / md) * wind * dtMs * 0.011;
-      p.vy += (mdy / md) * wind * dtMs * 0.011;
+      p.vx += (mdx / md) * wind * dt * 0.011;
+      p.vy += (mdy / md) * wind * dt * 0.011;
     }
 
     if (p.lock && (input.rightDown || input.extractionArmed)) {
@@ -305,15 +349,34 @@
       const da = Math.hypot(adx, ady) + 1;
       const db = Math.hypot(bdx, bdy) + 1;
       const strength = Math.max(input.chakanaGrip.strength, input.extractionArmed ? 0.68 : 0);
-      p.vx += (adx / da) * strength * 0.026 * dtMs;
-      p.vy += (ady / da) * strength * 0.026 * dtMs;
-      p.vx += (bdx / db) * strength * 0.018 * dtMs;
-      p.vy += (bdy / db) * strength * 0.018 * dtMs;
+      p.vx += (adx / da) * strength * 0.02 * dt;
+      p.vy += (ady / da) * strength * 0.02 * dt;
+      p.vx += (bdx / db) * strength * 0.014 * dt;
+      p.vy += (bdy / db) * strength * 0.014 * dt;
     }
 
-    if (p.lock && reveal > 0.74) {
-      p.vx *= 0.64;
-      p.vy *= 0.64;
+    if (p.lock) {
+      const dance = chakanaDanceProfile();
+      const lockReveal = clamp(reveal * 0.6 + 0.35, 0.25, 1);
+      const beat = phase * dance.orbit + p.dancePhase;
+      const radial = dance.radius * lockReveal;
+      const pulse = Math.sin(phase * dance.pulse + p.target * 0.017) * (0.3 + dance.amount * 0.9);
+      const ox = Math.cos(beat) * radial + Math.sin(phase * dance.flutter + p.y * 0.012) * radial * 0.35;
+      const oy = Math.sin(beat * p.danceAxis) * radial + Math.cos(phase * dance.flutter + p.x * 0.012) * radial * 0.35;
+      p.vx += (ox + pulse) * 0.0026 * dt;
+      p.vy += (oy - pulse) * 0.0026 * dt;
+      if (reveal > 0.74 && input.danceMode <= 2) {
+        p.vx *= 0.82;
+        p.vy *= 0.82;
+      }
+    }
+
+    const maxSpeed = 1.75 + machine.energy * 1.4 + (input.rightDown || input.extractionArmed ? 0.5 : 0);
+    const speed = Math.hypot(p.vx, p.vy);
+    if (speed > maxSpeed) {
+      const damp = maxSpeed / speed;
+      p.vx *= damp;
+      p.vy *= damp;
     }
   }
 
@@ -340,7 +403,7 @@
     const cnv = createCanvas(window.innerWidth, window.innerHeight);
     cnv.parent(parent);
     pixelDensity(Math.min(2, window.devicePixelRatio || 1));
-    background(11, 11, 13);
+    background(...tone.bg);
     w = width;
     h = height;
     cx = w * 0.5;
@@ -364,7 +427,7 @@
 
   function draw() {
     const nowMs = performance.now();
-    const dtMs = nowMs - lastMs;
+    const dtMs = clamp(nowMs - lastMs, 8, 34);
     lastMs = nowMs;
     phase += dtMs * 0.001;
     formation = clamp((nowMs - machine.startMs) / 10800, 0, 1);
@@ -374,20 +437,21 @@
     ensureParticles();
 
     noStroke();
-    fill(11, 11, 13, 28);
+    fill(tone.bg[0], tone.bg[1], tone.bg[2], 28);
     rect(0, 0, w, h);
 
-    const guideAlpha = (0.05 + formation * 0.28) * visibilityEnergy;
-    fill(236, 232, 224, 255 * guideAlpha);
+    const guideAlpha = (0.04 + formation * 0.24) * visibilityEnergy;
+    fill(tone.guide[0], tone.guide[1], tone.guide[2], 255 * guideAlpha);
     for (let i = 0; i < chakanaPoints.length; i += 4) {
       const p = chakanaPoints[i];
       const reveal = clamp((formation - p.layer * 0.75) * 2.4, 0, 1) * visibilityEnergy;
       if (reveal <= 0) continue;
-      fill(236, 232, 224, 255 * guideAlpha * reveal);
+      fill(tone.guide[0], tone.guide[1], tone.guide[2], 255 * guideAlpha * reveal);
       rect(p.x - 1, p.y - 1, 2, 2);
     }
 
-    const drag = 0.988 - machine.energy * 0.035;
+    const calmWeight = nowMs < machine.calmUntil ? 1 : 0;
+    const drag = 0.985 - machine.energy * 0.028 + calmWeight * 0.01;
     for (let i = 0; i < particles.length; i += 1) {
       const p = particles[i];
       applyForces(p, dtMs);
@@ -406,16 +470,17 @@
         p.target = Math.floor(rand() * Math.max(1, chakanaPoints.length));
       }
 
-      const base = p.tier === 0 ? 0.34 : p.tier === 1 ? 0.46 : 0.6;
-      const modeBoost = input.mode === "palette" ? 0.12 : 0;
+      const base = p.tier === 0 ? 0.32 : p.tier === 1 ? 0.43 : 0.56;
+      const modeBoost = input.mode === "palette" ? 0.08 : 0;
       const alpha = clamp(base + modeBoost + formation * 0.1 + visibilityEnergy * 0.16 + ritualWave * 0.15 + input.commandPulse * 0.1 + (p.lock ? input.extractionPulse * 0.12 : 0), 0.08, 0.95);
       const [r, g, b] = getParticleColor(p);
       fill(r, g, b, alpha * 255);
       circle(p.x, p.y, p.size * 2);
     }
 
-    const veil = input.mode === "palette" ? clamp(0.02 - machine.energy * 0.008, 0.003, 0.028) : clamp(0.042 - machine.energy * 0.014, 0.01, 0.06);
-    fill(7, 7, 9, veil * 255);
+    const veilBase = input.mode === "palette" ? 0.02 : 0.04;
+    const veil = clamp(veilBase - machine.energy * 0.01, 0.006, 0.05);
+    fill(tone.veil[0], tone.veil[1], tone.veil[2], veil * 255);
     rect(0, 0, w, h);
 
     if (nowMs - machine.startMs > 2600 && (nowMs - machine.startMs) % 3500 < dtMs) saveMemory();
@@ -438,13 +503,15 @@
     input.x = mouseX;
     input.y = mouseY;
     input.speed = Math.hypot(dx, dy) / dt;
+    input.filteredSpeed += (input.speed - input.filteredSpeed) * 0.22;
     input.lastMoveMs = now;
     input.active = true;
     input.lastInteractionMs = now;
-    input.revealBoost = clamp(input.revealBoost + clamp(input.speed * 0.45, 0, 1.2) * 0.14 + 0.01, 0, 1.6);
+    input.revealBoost = clamp(input.revealBoost + clamp(input.filteredSpeed * 0.42, 0, 1.15) * 0.14 + 0.01, 0, 1.6);
     if (input.rightDown) {
-      input.chakanaGrip.x = mouseX;
-      input.chakanaGrip.y = mouseY;
+      const gripBlend = smoothStep(0, 1, 0.45);
+      input.chakanaGrip.x += (mouseX - input.chakanaGrip.x) * gripBlend;
+      input.chakanaGrip.y += (mouseY - input.chakanaGrip.y) * gripBlend;
     }
   }
 
@@ -479,9 +546,11 @@
 
   function keyPressed() {
     const k = key.toLowerCase();
+    let handled = false;
     if (k === "r") {
       ritualAt(cx, cy);
       announceCommand("R ritual");
+      handled = true;
     }
     if (k === "c") {
       machine.calmUntil = performance.now() + 6000;
@@ -489,8 +558,14 @@
       machine.residue = clamp(machine.residue - 0.25, 0, 1.2);
       input.commandPulse = clamp(input.commandPulse + 0.07, 0, 1);
       input.revealBoost = clamp(input.revealBoost + 0.06, 0, 1.5);
+      input.filteredSpeed *= 0.5;
+      for (let i = 0; i < particles.length; i += 1) {
+        particles[i].vx *= 0.82;
+        particles[i].vy *= 0.82;
+      }
       input.lastInteractionMs = performance.now();
       announceCommand("C calma 6s");
+      handled = true;
     }
     if (k === "m") {
       memory.variation = (memory.variation + 0.041) % 1;
@@ -500,6 +575,7 @@
       input.lastInteractionMs = performance.now();
       saveMemory();
       announceCommand("M mutación");
+      handled = true;
     }
     if (k === "x") {
       input.extractionArmed = !input.extractionArmed;
@@ -509,12 +585,24 @@
       updateHudState();
       saveMemory();
       announceCommand(`X extracción ${input.extractionArmed ? "ON" : "OFF"}`);
+      handled = true;
     }
-    if (k === "v") toggleMode();
+    if (k === "v") {
+      toggleMode();
+      handled = true;
+    }
     if (k === "h") {
       toggleHud();
       announceCommand("H HUD");
+      handled = true;
     }
+
+    if (k >= "1" && k <= "5") {
+      setDanceMode(Number(k));
+      handled = true;
+    }
+
+    if (handled) return false;
   }
 
   window.addEventListener("beforeunload", saveMemory);
