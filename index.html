@@ -1,13 +1,23 @@
 <!doctype html>
 <html lang="es">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Memoria de Campo — FLUX</title>
-  <link rel="stylesheet" href="style.css" />
-</head>
-<body>
-  <canvas id="c"></canvas>
-  <script src="main.js"></script>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Memoria de Campo — FLUX</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <canvas id="c" aria-label="Memoria de Campo FLUX"></canvas>
+
+    <aside id="hud" aria-live="polite">
+      <p class="hud-title">FLUX</p>
+      <p><kbd>R</kbd> ritual al centro</p>
+      <p><kbd>C</kbd> calma</p>
+      <p><kbd>M</kbd> mutación</p>
+      <p><kbd>H</kbd> ocultar / mostrar</p>
+      <p><kbd>Click der.</kbd> polaridad chakana</p>
+    </aside>
+
+    <script src="main.js"></script>
+  </body>
 </html>
